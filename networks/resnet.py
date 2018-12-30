@@ -49,6 +49,9 @@ class BasicBlock(nn.Module):
         out = self.conv2(out)
         out = self.bn2(out)
 
+        #Add dropout
+        out = F.dropout2d(out, p=0.1, training=True)
+        
         if self.downsample is not None:
             identity = self.downsample(x)
 
