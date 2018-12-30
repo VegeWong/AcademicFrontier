@@ -1,17 +1,17 @@
 import torch
 import torchvision
-
-class Adversary(object):
+import resnet
+class Adversary(ResNet):
     '''
         A wrapper for adversary and different attack method
         Current: fgsm, ifgsm
         TO-Do: DeepFool, Carlini-Wagner's L2 attack
     '''
 
-    def __init__(self, net, criterion, **kargs):
+    def __init__(self, criterion, **kargs):
         super(Adversary, self).__init__()
 
-        self.net = net
+        self.net = resnet.resnet50(pretrained=kargs['pretrained'])
         self.criterion = criterion
         self.method = getattr(self, kargs['method'])
 
@@ -24,7 +24,7 @@ class Adversary(object):
 
     def none(self, x, y, targeted, **kargs):
         self.net.eval()
-        return x, self.net(x)
+        return x
 
     def fgsm(self, x, y, targeted, **kargs):
         self.net.eval()
@@ -48,8 +48,7 @@ class Adversary(object):
         if kargs['truncate']:
             xm = torch.clamp(xm, kargs['vmin'], kargs['vmax'])
 
-        ym = self.net(xm)
-        return xm, ym
+        return xm
 
     def ifgsm(self, x, y, targeted, **kargs):
         self.net.eval()
@@ -73,7 +72,7 @@ class Adversary(object):
 
             # truncate if the value range is limited
             if kargs['truncate']:
-                x = torch.clamp(xm, kargs['vmin'], kargs['vmax'])
+                x = torch.clamp(x, kargs['vmin'], kargs['vmax'])
 
-        return x, self.net(x)
+        return x
 
