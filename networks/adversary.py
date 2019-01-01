@@ -1,32 +1,32 @@
 import torch
 import torchvision
-import resnet
-class Adversary(ResNet):
+from networks import resnet
+class Adversary():
     '''
         A wrapper for adversary and different attack method
         Current: fgsm, ifgsm
         TO-Do: DeepFool, Carlini-Wagner's L2 attack
     '''
 
-    def __init__(self, criterion, **kargs):
+    def __init__(self, criterion, args):
         super(Adversary, self).__init__()
 
-        self.net = resnet.resnet50(pretrained=kargs['pretrained'])
+        self.net = resnet.resnet34(pretrained=args.pretrained)
         self.criterion = criterion
-        self.method = getattr(self, kargs['method'])
+        self.method = getattr(self, args.method)
 
 
-    def generate(self, x, y, targeted, **kargs):
+    def generate(self, x, y, targeted, args):
         x.requires_grad = True
         self.net.zero_grad()
         
-        return self.method(x, y, targeted, kargs)
+        return self.method(x, y, targeted, args)
 
-    def none(self, x, y, targeted, **kargs):
+    def none(self, x, y, targeted, args):
         self.net.eval()
         return x
 
-    def fgsm(self, x, y, targeted, **kargs):
+    def fgsm(self, x, y, targeted, args):
         self.net.eval()
 
         # raw data
@@ -40,21 +40,21 @@ class Adversary(ResNet):
 
         # perturbation
         if targeted:
-            xm = x - kargs['eps']*x.grad.sign()
+            xm = x - args.eps*x.grad.sign()
         else:
-            xm = x + kargs['eps']*x.grad.sign()
+            xm = x + args.eps*x.grad.sign()
 
         # truncate if the value range is limited
-        if kargs['truncate']:
-            xm = torch.clamp(xm, kargs['vmin'], kargs['vmax'])
+        if args.truncate:
+            xm = torch.clamp(xm, args.vmin, args.vmax)
 
         return xm
 
-    def ifgsm(self, x, y, targeted, **kargs):
+    def ifgsm(self, x, y, targeted, args):
         self.net.eval()
-        alpha = kargs['eps'] / kargs['iterations']
+        alpha = args.eps / args.iterations
 
-        for i in range(kargs['iterations']):
+        for i in range(args.iterations):
             # raw data
             pred = self.net(x)
             loss = self.criterion(pred, y)
@@ -71,8 +71,8 @@ class Adversary(ResNet):
                 x = x + alpha*x.grad.sign()
 
             # truncate if the value range is limited
-            if kargs['truncate']:
-                x = torch.clamp(x, kargs['vmin'], kargs['vmax'])
+            if args.truncate:
+                x = torch.clamp(x, args.vmin, args.vmax)
 
         return x
 

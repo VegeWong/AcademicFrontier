@@ -23,7 +23,7 @@ parser.add_argument('--resultdir', type=str, default='./results/',
                     help='output dir')
 parser.add_argument('--model', type=str, default='./models/001.model',
                     help='directory for loading models')
-parser.add_argument('--name', type=str, default=datetime.datetime.strftime(time1,'%Y-%m-%d %H:%M:%S'))
+parser.add_argument('--name', type=str, default=datetime.datetime.now().strftime('%Y-%m-%d-%H:%M:%S'))
 parser.add_argument('--lr', type=float, default=0.05,
                     help='learning rate')
 parser.add_argument('--betas', type=float, default=0.05,
@@ -32,7 +32,7 @@ parser.add_argument('--eps', type=float, default=0.01,
                     help='epsilon')
 parser.add_argument('--epochs', type=int, default=20)
 parser.add_argument('--batch_size', type=int, default=32)
-parser.add_argument('--image_size', type=int, default=128)
+parser.add_argument('--image_size', type=int, default=112)
 parser.add_argument('--transform', type=str2bool, default=False)
 parser.add_argument('--pretrained', type=str2bool, default=False,
                     help='Use pretrained resnet to accelerate convergence')
@@ -63,17 +63,17 @@ def main(args):
         raise argparse.ArgumentError("Unknown value for --mode: "+args.mode)
 
 
-def train(union_net, **kargs):
-    optimizer = torch.optim.Adam(union_net.net.parameters(), lr=kargs['lr'], betas=betas)
-    train_transform = transforms.Compose()
-    if kargs.transform:
-        train_transform = transforms.Compose([transforms.RandomResizedCrop(size=kargs['image_size']),
+def train(union_net, args):
+    optimizer = torch.optim.Adam(union_net.net.parameters(), lr=args.lr, betas=(0.5, 0.999))
+    train_transform = transforms.ToTensor()
+    if args.transform:
+        train_transform = transforms.Compose([transforms.RandomResizedCrop(size=args.image_size),
                                 transforms.RandomHorizontalFlip(p=0.5),
                                 transforms.ToTensor(),
                                 transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
                                 ])
     else:
-        train_transform = transforms.Compose([transforms.Resize(kargs['image_size']),
+        train_transform = transforms.Compose([transforms.Resize(args.image_size),
                                 transforms.ToTensor(),
                                 transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
                                 ])
@@ -82,12 +82,12 @@ def train(union_net, **kargs):
                                 batch_size=args.batch_size,
                                 Shuffle=False)
     
-    if kargs.cuda:
+    if args.cuda:
         union_net = union_net.cuda()
 
-    for epoch_counter in range(kargs.epochs):
+    for epoch_counter in range(args.epochs):
         for batch_index, (data, labels) in enumerate(train_loader):
-            if kargs.cuda:
+            if args.cuda:
                 data = data.cuda()
                 labels = labels.cuda()
             
@@ -105,9 +105,9 @@ def train(union_net, **kargs):
             loss.backward()
             optimizer.step()
 
-    torch.save(union_net.net.state_dict, kargs['resultdir']+kargs['name']+'.pkl')
+    torch.save(union_net.net.state_dict, args.resultdir+args.name+'.pkl')
 
-def generate(net, adv, **kargs):
+def generate(net, adv, args):
     return
 
 
