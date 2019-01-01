@@ -50,7 +50,7 @@ class BasicBlock(nn.Module):
         out = self.bn2(out)
 
         #Add dropout
-        out = F.dropout2d(out, p=0.1, training=True)
+        out = F.dropout2d(out, p=0.1, training=False)
         
         if self.downsample is not None:
             identity = self.downsample(x)
@@ -92,7 +92,7 @@ class Bottleneck(nn.Module):
         out = self.bn3(out)
 
         #Add dropout
-        out = F.dropout2d(out, p=0.1, training=True)
+        out = F.dropout2d(out, p=0.1, training=False)
 
         if self.downsample is not None:
             identity = self.downsample(x)

@@ -2,6 +2,7 @@ import os
 import networks
 import argparse
 import datetime
+from PIL import Image
 import torch
 import torchvision
 import torch.utils.model_zoo as model_zoo
@@ -19,9 +20,13 @@ parser.add_argument('--iterations', type=int, default=1,
                     help='determine the number of iterations of ifgsm')
 parser.add_argument('--datadir', type=str, default='./data',
                     help='set the directory of training/test data')
-parser.add_argument('--resultdir', type=str, default='./results/',
+parser.add_argument('--resultdir', type=str, default='./models/',
                     help='output dir')
-parser.add_argument('--model', type=str, default='./models/001.model',
+parser.add_argument('--generatedir', type=str, default='./images/',
+                    help='directory for saving generated images')
+# parser.add_argument('--dropout', type=str2bool, default=True,
+#                     help='always dropout in the units of network')
+parser.add_argument('--model', type=str, default='./result/model.pkl',
                     help='directory for loading models')
 parser.add_argument('--name', type=str, default=datetime.datetime.now().strftime('%Y-%m-%d-%H:%M:%S'))
 parser.add_argument('--lr', type=float, default=0.05,
@@ -30,6 +35,8 @@ parser.add_argument('--betas', type=float, default=0.05,
                     help='learning rate')
 parser.add_argument('--eps', type=float, default=0.01,
                     help='epsilon')
+parser.add_argument('--num_classes', type=int, default=10,
+                    help='number of classeses')
 parser.add_argument('--epochs', type=int, default=20)
 parser.add_argument('--batch_size', type=int, default=32)
 parser.add_argument('--image_size', type=int, default=112)
@@ -64,39 +71,44 @@ def main(args):
 
 
 def train(union_net, args):
+    # saving arg settings 
+    os.popen('mkdir '+args.resultdir+args.name)
+    os.popen('touch '+args.resultdir+args.name+'/args.txt')
+    with open(args.resultdir+args.name+'/args.txt', 'w') as f:
+        f.write(str(args))
+
     optimizer = torch.optim.Adam(union_net.net.parameters(), lr=args.lr, betas=(0.5, 0.999))
     train_transform = transforms.ToTensor()
     if args.transform:
-        train_transform = transforms.Compose([transforms.RandomResizedCrop(size=args.image_size),
+        train_transform = transforms.Compose([transforms.RandomResizedCrop(size=(args.image_size, args.image_size)),
                                 transforms.RandomHorizontalFlip(p=0.5),
                                 transforms.ToTensor(),
                                 transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
                                 ])
     else:
-        train_transform = transforms.Compose([transforms.Resize(args.image_size),
+        train_transform = transforms.Compose([transforms.Resize((args.image_size, args.image_size)),
                                 transforms.ToTensor(),
                                 transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
                                 ])
-    train_set = datasets.ImageFolder(args.datadir+'train/', transform=train_transform)
+    train_set = datasets.ImageFolder(args.datadir+'/train/', transform=train_transform)
     train_loader = DataLoader(dataset=train_set,
                                 batch_size=args.batch_size,
-                                Shuffle=False)
+                                shuffle=True)
     
     if args.cuda:
-        union_net = union_net.cuda()
+        union_net.net = union_net.net.cuda()
 
     for epoch_counter in range(args.epochs):
-        for batch_index, (data, labels) in enumerate(train_loader):
+        epoch_loss = 0
+        for batch_index, (data, label) in enumerate(train_loader):
             if args.cuda:
                 data = data.cuda()
-                labels = labels.cuda()
-            
-            data_1, data_2 = torch.split(data, 2, dim=0)
-            label_1, label_2 = torch.split(labels, 2, dim=0)
-            data_2 = union_net.generate(data_2, label_2, False, args)
-            data = torch.cat((data_1, data_2), 0)
-            label = torch.cat((label_1, label_2), 0)
+                label = label.cuda()
 
+            # let the batches with even indexes perturbed by the adversary
+            if batch_index % 2 == 0:
+                data = union_net.generate(data, label, False, args)
+            # switch to training mode
             union_net.net.train()
             pred = union_net.net(data)
             loss = union_net.criterion(pred, label)
@@ -104,12 +116,54 @@ def train(union_net, args):
             union_net.net.zero_grad()
             loss.backward()
             optimizer.step()
+            
+            print('Epoch index=%d, batch index=%d, currentloss=%.3f' %(epoch_counter, batch_index, loss))
+        print('Average loss of epoch %d: %.3f' %(epoch_counter, epoch_loss / (batch_index+1)))
+    torch.save(union_net.net.state_dict(), args.resultdir+args.name+'/state_dict.pkl')
 
-    torch.save(union_net.net.state_dict, args.resultdir+args.name+'.pkl')
+def generate(union_net, args):
+    folder_name = os.path.split(os.path.split(args.model)[0])[1]
+    os.popen('mkdir '+args.generatedir+folder_name)
+    test_transform = transforms.ToTensor()
+    if args.transform:
+        test_transform = transforms.Compose([transforms.RandomResizedCrop(size=(args.image_size, args.image_size)),
+                                transforms.RandomHorizontalFlip(p=0.5),
+                                transforms.ToTensor(),
+                                transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
+                                ])
+    else:
+        test_transform = transforms.Compose([transforms.Resize((args.image_size, args.image_size)),
+                                transforms.ToTensor(),
+                                transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
+                                ])
+    test_set = datasets.ImageFolder(args.datadir+'/test/', transform=test_transform)
+    test_loader = DataLoader(dataset=test_set,
+                                batch_size=args.batch_size,
+                                shuffle=True)
+           
+    if args.cuda:
+        union_net.net = union_net.net.cuda()
 
-def generate(net, adv, args):
-    return
+    loss = 0.0
+    for batch_index, (data, label) in enumerate(test_loader):
+        if args.cuda:
+            data = data.cuda()
+            label = label.cuda()
 
+        # let the batches with even indexes perturbed by the adversary
+        if batch_index % 2 == 0:
+            datam = union_net.generate(data, label, False, args)
+
+        pred = union_net.net(datam)
+        loss += union_net.criterion(pred, label)
+        for i in range(len(data)):
+            dirname = args.generatedir+folder_name+'batch%fimage%d'%(batch_index, i)
+            os.mkdir(dirname)
+            data[i].save(dirname+'/origin'+str(label[i])+'.JPEG')
+            datam[i].save(dirname+'/modified'+str(pred[i])+'.JPEG')
+        
+    loss /= batch_index
+    print('loss=%.3f' %(loss))
 
 if __name__ == "__main__":
     args = parser.parse_args()
