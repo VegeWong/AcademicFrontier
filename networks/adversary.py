@@ -11,7 +11,7 @@ class Adversary():
     def __init__(self, criterion, args):
         super(Adversary, self).__init__()
 
-        self.net = resnet.resnet34(num_classes=args.num_classes, pretrained=args.pretrained)
+        self.net = resnet.resnet50(num_classes=args.num_classes, pretrained=args.pretrained)
         self.criterion = criterion
         self.method = getattr(self, args.method)
 

@@ -31,13 +31,15 @@ parser.add_argument('--model', type=str, default='./result/model.pkl',
 parser.add_argument('--name', type=str, default=datetime.datetime.now().strftime('%Y-%m-%d-%H:%M:%S'))
 parser.add_argument('--lr', type=float, default=0.05,
                     help='learning rate')
+parser.add_argument('--seed', type=float, default=7,
+                    help='torch random seed')
 parser.add_argument('--betas', type=float, default=0.05,
                     help='learning rate')
 parser.add_argument('--eps', type=float, default=0.01,
                     help='epsilon')
 parser.add_argument('--num_classes', type=int, default=10,
                     help='number of classeses')
-parser.add_argument('--epochs', type=int, default=20)
+parser.add_argument('--epochs', type=int, default=10)
 parser.add_argument('--batch_size', type=int, default=32)
 parser.add_argument('--image_size', type=int, default=112)
 parser.add_argument('--transform', type=str2bool, default=False)
@@ -55,6 +57,7 @@ criterion = torch.nn.CrossEntropyLoss()
 
 def main(args):
     print(args)
+    torch.manual_seed(args.seed)
     torch.cuda.set_device(args.gpu_id)
 
     # Use existing model or pretrained resnet
@@ -83,12 +86,12 @@ def train(union_net, args):
         train_transform = transforms.Compose([transforms.RandomResizedCrop(size=(args.image_size, args.image_size)),
                                 transforms.RandomHorizontalFlip(p=0.5),
                                 transforms.ToTensor(),
-                                transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
+                                transforms.Normalize(std=[0.5, 0.5, 0.5], mean=[0.5, 0.5, 0.5])
                                 ])
     else:
         train_transform = transforms.Compose([transforms.Resize((args.image_size, args.image_size)),
                                 transforms.ToTensor(),
-                                transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
+                                transforms.Normalize(std=[0.5, 0.5, 0.5], mean=[0.5, 0.5, 0.5])
                                 ])
     train_set = datasets.ImageFolder(args.datadir+'/train/', transform=train_transform)
     train_loader = DataLoader(dataset=train_set,
@@ -104,37 +107,41 @@ def train(union_net, args):
             if args.cuda:
                 data = data.cuda()
                 label = label.cuda()
-
+            # print(data)
             # let the batches with even indexes perturbed by the adversary
             if batch_index % 2 == 0:
                 data = union_net.generate(data, label, False, args)
+
             # switch to training mode
             union_net.net.train()
             pred = union_net.net(data)
             loss = union_net.criterion(pred, label)
-
+            epoch_loss += loss.item()
+            
             union_net.net.zero_grad()
             loss.backward()
             optimizer.step()
             
-            print('Epoch index=%d, batch index=%d, currentloss=%.3f' %(epoch_counter, batch_index, loss))
+            # print('Epoch index=%d, batch index=%d, currentloss=%.3f' %(epoch_counter, batch_index, loss))
         print('Average loss of epoch %d: %.3f' %(epoch_counter, epoch_loss / (batch_index+1)))
     torch.save(union_net.net.state_dict(), args.resultdir+args.name+'/state_dict.pkl')
 
 def generate(union_net, args):
     folder_name = os.path.split(os.path.split(args.model)[0])[1]
     os.popen('mkdir '+args.generatedir+folder_name)
+    os.popen('touch '+args.generatedir+folder_name+'/args.txt')
+    
     test_transform = transforms.ToTensor()
     if args.transform:
         test_transform = transforms.Compose([transforms.RandomResizedCrop(size=(args.image_size, args.image_size)),
                                 transforms.RandomHorizontalFlip(p=0.5),
                                 transforms.ToTensor(),
-                                transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
+                                transforms.Normalize(std=[0.5, 0.5, 0.5], mean=[0.5, 0.5, 0.5])
                                 ])
     else:
         test_transform = transforms.Compose([transforms.Resize((args.image_size, args.image_size)),
                                 transforms.ToTensor(),
-                                transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
+                                transforms.Normalize(std=[0.5, 0.5, 0.5], mean=[0.5, 0.5, 0.5])
                                 ])
     test_set = datasets.ImageFolder(args.datadir+'/test/', transform=test_transform)
     test_loader = DataLoader(dataset=test_set,
@@ -145,25 +152,33 @@ def generate(union_net, args):
         union_net.net = union_net.net.cuda()
 
     loss = 0.0
+    tran = transforms.Compose([transforms.Normalize(std=[2, 2, 2], mean=[-1, -1, -1]),
+                            transforms.ToPILImage()
+                            ]) 
     for batch_index, (data, label) in enumerate(test_loader):
         if args.cuda:
             data = data.cuda()
             label = label.cuda()
 
-        # let the batches with even indexes perturbed by the adversary
-        if batch_index % 2 == 0:
-            datam = union_net.generate(data, label, False, args)
+        datam = union_net.generate(data, label, False, args)
 
         pred = union_net.net(datam)
-        loss += union_net.criterion(pred, label)
+        loss += union_net.criterion(pred, label).item()
+        # print(data)
+        d = data.detach().cpu()
+        dm = datam.detach().cpu()
+        pred = torch.argmax(pred, 1)
         for i in range(len(data)):
-            dirname = args.generatedir+folder_name+'batch%fimage%d'%(batch_index, i)
+            dirname = args.generatedir+folder_name+'/batch%dimage%d'%(batch_index, i)
             os.mkdir(dirname)
-            data[i].save(dirname+'/origin'+str(label[i])+'.JPEG')
-            datam[i].save(dirname+'/modified'+str(pred[i])+'.JPEG')
+            tran(d[i]).save(dirname+'/origin['+str(label[i])+'].JPEG')
+            tran(dm[i]).save(dirname+'/modified['+str(pred[i])+'].JPEG')
         
-    loss /= batch_index
-    print('loss=%.3f' %(loss))
+    loss /= batch_index + 1
+    print('Generating loss=%.3f' %(loss))
+    with open(args.generatedir+folder_name+'/args.txt', 'w') as f:
+        f.write(str(args))
+        f.write('Generating loss=%.3f' %(loss))
 
 if __name__ == "__main__":
     args = parser.parse_args()
