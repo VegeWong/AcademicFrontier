@@ -1,7 +1,8 @@
 import torch
 import torchvision
 from networks import resnet
-class Adversary():
+
+class Adversary(object):
     '''
         A wrapper for adversary and different attack method
         Current: fgsm, ifgsm
@@ -11,7 +12,8 @@ class Adversary():
     def __init__(self, criterion, args):
         super(Adversary, self).__init__()
 
-        self.net = resnet.resnet50(num_classes=args.num_classes, pretrained=args.pretrained)
+        self.net = resnet.resnet50(pretrained=args.pretrained, args=args)
+        self.net.fc = torch.nn.Linear(2048, args.num_classes)
         self.criterion = criterion
         self.method = getattr(self, args.method)
 
@@ -44,9 +46,8 @@ class Adversary():
         else:
             xm = x + args.eps*x.grad.sign()
 
-        # truncate if the value range is limited
-        if args.truncate:
-            xm = torch.clamp(xm, args.vmin, args.vmax)
+        # truncate
+        xm = torch.clamp(xm, -1, 1)
 
         return xm
 
@@ -55,6 +56,7 @@ class Adversary():
         alpha = args.eps / args.iterations
 
         for i in range(args.iterations):
+            # print(i)
             # raw data
             pred = self.net(x)
             loss = self.criterion(pred, y)
@@ -70,9 +72,9 @@ class Adversary():
             else:
                 x = x + alpha*x.grad.sign()
 
-            # truncate if the value range is limited
-            if args.truncate:
-                x = torch.clamp(x, args.vmin, args.vmax)
-
+            # truncate
+            x = torch.clamp(x, -1, 1)
+            x = x.clone().detach().requires_grad_(True)
         return x
 
+    # def patch(self, x, y, targeted, args):

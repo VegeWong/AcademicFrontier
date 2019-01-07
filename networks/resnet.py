@@ -29,7 +29,7 @@ def conv1x1(in_planes, out_planes, stride=1):
 class BasicBlock(nn.Module):
     expansion = 1
 
-    def __init__(self, inplanes, planes, stride=1, downsample=None):
+    def __init__(self, inplanes, planes, stride=1, downsample=None, dropout=False, prob=0.1):
         super(BasicBlock, self).__init__()
         self.conv1 = conv3x3(inplanes, planes, stride)
         self.bn1 = nn.BatchNorm2d(planes)
@@ -38,7 +38,8 @@ class BasicBlock(nn.Module):
         self.bn2 = nn.BatchNorm2d(planes)
         self.downsample = downsample
         self.stride = stride
-
+        self.dropout = dropout
+        self.prob = prob
     def forward(self, x):
         identity = x
 
@@ -50,7 +51,7 @@ class BasicBlock(nn.Module):
         out = self.bn2(out)
 
         #Add dropout
-        out = F.dropout2d(out, p=0.1, training=False)
+        out = F.dropout2d(out, p=self.prob, training=self.dropout)
         
         if self.downsample is not None:
             identity = self.downsample(x)
@@ -64,7 +65,7 @@ class BasicBlock(nn.Module):
 class Bottleneck(nn.Module):
     expansion = 4
 
-    def __init__(self, inplanes, planes, stride=1, downsample=None):
+    def __init__(self, inplanes, planes, stride=1, downsample=None, dropout=False, prob=0.1):
         super(Bottleneck, self).__init__()
         self.conv1 = conv1x1(inplanes, planes)
         self.bn1 = nn.BatchNorm2d(planes)
@@ -75,7 +76,8 @@ class Bottleneck(nn.Module):
         self.relu = nn.ReLU(inplace=True)
         self.downsample = downsample
         self.stride = stride
-
+        self.dropout = dropout
+        self.prob = prob
     def forward(self, x):
         identity = x
 
@@ -92,7 +94,7 @@ class Bottleneck(nn.Module):
         out = self.bn3(out)
 
         #Add dropout
-        out = F.dropout2d(out, p=0.1, training=False)
+        out = F.dropout2d(out, p=self.prob, training=self.dropout)
 
         if self.downsample is not None:
             identity = self.downsample(x)
@@ -105,8 +107,11 @@ class Bottleneck(nn.Module):
 
 class ResNet(nn.Module):
 
-    def __init__(self, block, layers, num_classes=1000, zero_init_residual=False):
+    def __init__(self, block, layers, args, num_classes=1000, zero_init_residual=False):
         super(ResNet, self).__init__()
+
+        self.dropout = args.dropout
+        self.dropout_prob = args.dropout_prob
         self.inplanes = 64
         self.conv1 = nn.Conv2d(3, 64, kernel_size=7, stride=2, padding=3,
                                bias=False)
@@ -119,7 +124,7 @@ class ResNet(nn.Module):
         self.layer4 = self._make_layer(block, 512, layers[3], stride=2)
         self.avgpool = nn.AdaptiveAvgPool2d((1, 1))
         self.fc = nn.Linear(512 * block.expansion, num_classes)
-
+        
         for m in self.modules():
             if isinstance(m, nn.Conv2d):
                 nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
@@ -146,7 +151,7 @@ class ResNet(nn.Module):
             )
 
         layers = []
-        layers.append(block(self.inplanes, planes, stride, downsample))
+        layers.append(block(self.inplanes, planes, stride, downsample, dropout=self.dropout, prob=self.dropout_prob))
         self.inplanes = planes * block.expansion
         for _ in range(1, blocks):
             layers.append(block(self.inplanes, planes))
@@ -192,13 +197,12 @@ def resnet34(pretrained=False, **kwargs):
         model.load_state_dict(model_zoo.load_url(model_urls['resnet34']))
     return model
 
-
-def resnet50(pretrained=False, **kwargs):
+def resnet50(args, pretrained=False, **kwargs):
     """Constructs a ResNet-50 model.
     Args:
         pretrained (bool): If True, returns a model pre-trained on ImageNet
     """
-    model = ResNet(Bottleneck, [3, 4, 6, 3], **kwargs)
+    model = ResNet(Bottleneck, [3, 4, 6, 3], args=args, **kwargs)
     if pretrained:
         model.load_state_dict(model_zoo.load_url(model_urls['resnet50']))
     return model
