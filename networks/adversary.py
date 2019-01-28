@@ -1,6 +1,7 @@
 import torch
 import torchvision
 from networks import resnet
+import utils
 
 class Adversary(object):
     '''
@@ -77,4 +78,8 @@ class Adversary(object):
             x = x.clone().detach().requires_grad_(True)
         return x
 
+    # def cw(self, x, target, args, n):
+    #     def _loss():
+
+            
     # def patch(self, x, y, targeted, args):

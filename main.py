@@ -3,13 +3,15 @@ import networks
 import argparse
 import datetime
 from PIL import Image
+
 import torch
 import torchvision
 import torch.utils.model_zoo as model_zoo
 from torch.utils.data import DataLoader
 from torchvision import datasets
 from torchvision import transforms
-from utils import str2bool, printArgs
+
+import utils
 
 parser = argparse.ArgumentParser(description="Model Configuration")
 parser.add_argument('--mode', type=str, default='train',
@@ -24,8 +26,10 @@ parser.add_argument('--resultdir', type=str, default='./models/',
                     help='output dir')
 parser.add_argument('--generatedir', type=str, default='./images/',
                     help='directory for saving generated images')
-parser.add_argument('--dropout', type=str2bool, default=True,
+parser.add_argument('--dropout', type=utils.str2bool, default=True,
                     help='always dropout in the units of network')
+parser.add_argument('--stochastic', type=utils.str2bool, default=True,
+                    help='stochastic depth')
 parser.add_argument('--model', type=str, default='./result/model.pkl',
                     help='directory for loading models')
 parser.add_argument('--name', type=str, default=datetime.datetime.now().strftime('%Y-%m-%d-%H:%M:%S'))
@@ -44,10 +48,10 @@ parser.add_argument('--num_decay', type=int, default=5)
 parser.add_argument('--decay', type=float, default=0.1)
 parser.add_argument('--batch_size', type=int, default=256)
 parser.add_argument('--image_size', type=int, default=112)
-parser.add_argument('--transform', type=str2bool, default=False)
-parser.add_argument('--pretrained', type=str2bool, default=True,
+parser.add_argument('--transform', type=utils.str2bool, default=False)
+parser.add_argument('--pretrained', type=utils.str2bool, default=True,
                     help='Use pretrained resnet to accelerate convergence')
-parser.add_argument('--cuda', type=str2bool, default=True,
+parser.add_argument('--cuda', type=utils.str2bool, default=True,
                     help='Use GPU')
 parser.add_argument('--gpu_id', type=int, default=3,
                     help='GPU ID used')                   
@@ -55,7 +59,7 @@ parser.add_argument('--gpu_id', type=int, default=3,
 criterion = torch.nn.CrossEntropyLoss()
 
 def main(args):
-    printArgs(args)
+    utils.printArgs(args)
     torch.manual_seed(args.seed)
     torch.cuda.set_device(args.gpu_id)
 
@@ -77,12 +81,12 @@ def train(union_net, args):
     os.popen('mkdir '+args.resultdir+args.name)
     os.popen('touch '+args.resultdir+args.name+'/args.txt')
     f = open(args.resultdir+args.name+'/args.txt', 'w')
-    printArgs(args, outputFile=f)
+    utils.printArgs(args, outputFile=f)
 
     optimizer = torch.optim.Adam(union_net.net.parameters(), lr=args.lr)
     train_transform = transforms.ToTensor()
     if args.transform:
-        train_transform = transforms.Compose([transforms.RandomResizedCrop(size=(args.image_size, args.image_size)),
+        train_transform = transforms.Compose([transforms.RandomResizedCrop(args.image_size),
                                 transforms.RandomHorizontalFlip(p=0.5),
                                 transforms.ToTensor(),
                                 transforms.Normalize(std=[0.5, 0.5, 0.5], mean=[0.5, 0.5, 0.5])
@@ -158,7 +162,7 @@ def generate(union_net, args):
     
     test_transform = transforms.ToTensor()
     if args.transform:
-        test_transform = transforms.Compose([transforms.RandomResizedCrop(size=(args.image_size, args.image_size)),
+        test_transform = transforms.Compose([transforms.RandomResizedCrop(size=args.image_size),
                                 transforms.RandomHorizontalFlip(p=0.5),
                                 transforms.ToTensor(),
                                 transforms.Normalize(std=[0.5, 0.5, 0.5], mean=[0.5, 0.5, 0.5])
@@ -190,23 +194,23 @@ def generate(union_net, args):
         pred = union_net.net(datam)
         loss += union_net.criterion(pred, label).item()
         # print(data)
-        d = data.detach().cpu()
-        dm = datam.detach().cpu()
-        pred = torch.argmax(pred, 1)
-        for i in range(len(data)):
-            dirname = args.generatedir+folder_name+'/batch%dimage%d'%(batch_index, i)
-            os.mkdir(dirname)
-            tran(d[i]).save(dirname+'/origin.JPEG')
-            tran(dm[i]).save(dirname+'/modified.JPEG')
-            os.popen('touch '+dirname+'/Labels.txt')
-            with open(dirname+'/Labels.txt', 'w') as f:
-                print('origin:'+str(label[i]), file=f)
-                print('modified:'+str(pred[i]), file=f)
+        # d = data.detach().cpu()
+        # dm = datam.detach().cpu()
+        # pred = torch.argmax(pred, 1)
+        # for i in range(len(data)):
+        #     dirname = args.generatedir+folder_name+'/batch%dimage%d'%(batch_index, i)
+        #     os.mkdir(dirname)
+        #     tran(d[i]).save(dirname+'/origin.JPEG')
+        #     tran(dm[i]).save(dirname+'/modified.JPEG')
+        #     os.popen('touch '+dirname+'/Labels.txt')
+        #     with open(dirname+'/Labels.txt', 'w') as f:
+        #         print('origin:'+str(label[i]), file=f)
+        #         print('modified:'+str(pred[i]), file=f)
         
     loss /= batch_index + 1
     print('Generating loss=%.3f' %(loss))
     with open(args.generatedir+folder_name+'/GenerateArgs.txt', 'w') as f:
-        printArgs(args, outputFile=f)
+        utils.printArgs(args, outputFile=f)
         print('Generating loss=%.3f' %(loss), file=f)
 
 if __name__ == "__main__":

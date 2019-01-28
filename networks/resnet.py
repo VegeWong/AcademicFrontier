@@ -1,6 +1,7 @@
 import torch.nn as nn
 import torch.utils.model_zoo as model_zoo
 import torch.nn.functional as F
+import random
 
 __all__ = ['ResNet', 'resnet18', 'resnet34', 'resnet50', 'resnet101',
            'resnet152']
@@ -94,11 +95,13 @@ class Bottleneck(nn.Module):
         out = self.bn3(out)
 
         #Add dropout
-        out = F.dropout2d(out, p=self.prob, training=self.dropout)
+        # out = F.dropout2d(out, p=self.prob, training=self.dropout)
+        out = F.dropout2d(out, p=self.prob, training=self.training)
 
         if self.downsample is not None:
             identity = self.downsample(x)
-
+        
+        out = out * int(random.random() + 0.9)
         out += identity
         out = self.relu(out)
 
